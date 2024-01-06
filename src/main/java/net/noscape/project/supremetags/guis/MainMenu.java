@@ -3,6 +3,7 @@ package net.noscape.project.supremetags.guis;
 import net.noscape.project.supremetags.*;
 import net.noscape.project.supremetags.handlers.menu.*;
 import org.bukkit.*;
+import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.*;
 import org.bukkit.event.inventory.*;
 import org.bukkit.inventory.*;
@@ -13,7 +14,6 @@ import java.util.*;
 import static net.noscape.project.supremetags.utils.Utils.*;
 
 public class MainMenu extends Menu {
-
     private final List<String> catorgies;
     private final Map<Integer, String> dataItem = new HashMap<>();
     private final Map<String, Integer> categoriesTags;
@@ -35,102 +35,99 @@ public class MainMenu extends Menu {
     }
 
     @Override
-    public void handleMenu(InventoryClickEvent e) {
+    public void handleMenu(InventoryClickEvent clickEvent) {
+        String category = dataItem.get(clickEvent.getSlot());
+        final FileConfiguration config = SupremeTags.getInstance().getConfig();
+        Material categoryMaterial; {
+            String materialName = config.getString("categories." + category + ".material");
+            if (materialName == null) return;
+            categoryMaterial = Material.valueOf(materialName);
+        }
+        Player player = (Player) clickEvent.getWhoClicked();
+        String permission = config.getString("categories." + category + ".permission");
 
-        Player player = (Player) e.getWhoClicked();
-
-        String category = dataItem.get(e.getSlot());
-
-        String material = SupremeTags.getInstance().getConfig().getString("categories." + category + ".material");
-        String permission = SupremeTags.getInstance().getConfig().getString("categories." + category + ".permission");
+        if (clickEvent.getCurrentItem() == null) return;
 
         boolean hasMinTags = false;
-
-        if (e.getCurrentItem() == null) return;
-
         for (String cats : getCatorgies()) {
-            if (cats != null) {
-                if (categoriesTags.get(cats) != null) {
-                    hasMinTags = true;
-                } else {
-                    hasMinTags = false;
-                }
+            if (cats == null) continue;
+            if (categoriesTags.get(cats) != null) {
+                hasMinTags = true;
                 break;
             }
         }
+        
+        if (category == null) return;
 
-        if (category != null) {
-            if (material != null && Objects.requireNonNull(e.getCurrentItem()).getType().equals(Material.valueOf(material.toUpperCase()))) {
-                if (hasMinTags) {
-                    if (permission != null && player.hasPermission(permission)) {
-                        menuUtil.setCategory(category);
-                        new CategoryMenu(SupremeTags.getMenuUtil(player, category)).open();
-                        menuUtil.getOwner().updateInventory();
-                    } else {
-                        msgPlayer(player, "&cYou don't have permission to access these tags.");
-                    }
-                } else {
-                    e.setCancelled(true);
-                    msgPlayer(player, "&cThere are no tags in this category.");
-                }
-            }
+        Material clickedMaterial = clickEvent.getCurrentItem().getType();
+        if (!clickedMaterial.equals(categoryMaterial)) return;
+        if (hasMinTags == false) {
+            clickEvent.setCancelled(true);
+            msgPlayer(player, "&cThere are no tags in this category.");
+            return;
         }
+
+        if (permission == null || player.hasPermission(permission) == false) {
+            msgPlayer(player, "&cYou don't have permission to access these tags.");
+            return;
+        }
+
+        menuUtil.setCategory(category);
+        new CategoryMenu(SupremeTags.getMenuUtil(player, category)).open();
+        menuUtil.getOwner().updateInventory();
     }
 
     @Override
     public void setMenuItems() {
-
+        final FileConfiguration config = SupremeTags.getInstance().getConfig();
         // loop through categories items.
         for (String cats : getCatorgies()) {
             if (cats == null) continue;
-            boolean canSee = SupremeTags.getInstance().getConfig().getBoolean("categories." + cats + ".permission-see-category");
-            String permission = SupremeTags.getInstance().getConfig().getString("categories." + cats + ".permission");
-            String material = SupremeTags.getInstance().getConfig().getString("categories." + cats + ".material");
-            int slot = SupremeTags.getInstance().getConfig().getInt("categories." + cats + ".slot");
-            String displayname = SupremeTags.getInstance().getConfig().getString("categories." + cats + ".id_display");
-            if (permission == null) continue;
-            if (menuUtil.getOwner().hasPermission(permission) && canSee) {
-                ItemStack cat_item = getCatItem(cats, Material.valueOf(material), displayname);
-                dataItem.put(slot, cats);
-                inventory.setItem(slot, cat_item);
-            } else if (!menuUtil.getOwner().hasPermission(permission) && !canSee) {
-                ItemStack cat_item = getCatItem(cats, Material.valueOf(material), displayname);
-                dataItem.put(slot, cats);
-                inventory.setItem(slot, cat_item);
-            } else if (menuUtil.getOwner().hasPermission(permission) && !canSee) {
-                ItemStack cat_item = getCatItem(cats, Material.valueOf(material), displayname);
-                dataItem.put(slot, cats);
-                inventory.setItem(slot, cat_item);
+            boolean canSee = config.getBoolean("categories." + cats + ".permission-see-category");
+            String permission = config.getString("categories." + cats + ".permission");
+            Material material; {
+                String materialName = config.getString("categories." + cats + ".material");
+                if (materialName == null) continue;
+                material = Material.valueOf(materialName);
             }
+            int slot = config.getInt("categories." + cats + ".slot");
+            String displayname = config.getString("categories." + cats + ".id_display");
+
+            Player owner = menuUtil.getOwner();
+            if (owner.hasPermission(permission) == false && !canSee) continue;
+
+            setCatIcon(slot, cats, material, displayname);
         }
 
-        if (SupremeTags.getInstance().getConfig().getBoolean("categories-menu-fill-empty")) {
+        if (config.getBoolean("categories-menu-fill-empty"))
             fillEmpty();
-        }
     }
-    private ItemStack getCatItem(String cat, Material material, String catDisplayName) {
-        assert material != null;
+    public void setCatIcon(int invSlot, String category, Material material, String categoryDisplayName) {
         ItemStack cat_item = new ItemStack(material, 1);
-        ItemMeta cat_itemMeta = cat_item.getItemMeta();
+        cat_item.setItemMeta(createCatIconMeta(cat_item, category, categoryDisplayName));
+        dataItem.put(invSlot, category);
+        inventory.setItem(invSlot, cat_item);
+    }
+    private ItemMeta createCatIconMeta(ItemStack icon, String category, String categoryDisplayName) {
+        ItemMeta itemMeta = icon.getItemMeta();
+        assert itemMeta != null;
+        itemMeta.setDisplayName(format(categoryDisplayName));
+        itemMeta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
+        itemMeta.addItemFlags(ItemFlag.HIDE_DYE);
+        itemMeta.addItemFlags(ItemFlag.HIDE_DESTROYS);
 
-        assert cat_itemMeta != null;
-        cat_itemMeta.setDisplayName(format(catDisplayName));
-        cat_itemMeta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
-        cat_itemMeta.addItemFlags(ItemFlag.HIDE_DYE);
-        cat_itemMeta.addItemFlags(ItemFlag.HIDE_DESTROYS);
-
-        // set lore
-        ArrayList<String> lore = (ArrayList<String>) SupremeTags.getInstance().getConfig().getStringList("categories." + cat + ".lore");
-        if (categoriesTags.get(cat) != null)
+        itemMeta.setLore(color(getCategoryLore(categoryDisplayName)));
+        return itemMeta;
+    }
+    private List<String> getCategoryLore(String category) {
+        ArrayList<String> lore = (ArrayList<String>) SupremeTags.getInstance().getConfig().getStringList("categories." + category + ".lore");
+        if (categoriesTags.get(category) != null)
             lore.replaceAll(s -> ChatColor.translateAlternateColorCodes('&', s)
-                .replaceAll("%tags_amount%", String.valueOf(categoriesTags.get(cat))));
+                .replaceAll("%tags_amount%", String.valueOf(categoriesTags.get(category))));
         else
             lore.replaceAll(s -> ChatColor.translateAlternateColorCodes('&', s)
                 .replaceAll("%tags_amount%", String.valueOf(0)));
-        cat_itemMeta.setLore(color(lore));
-        
-        cat_item.setItemMeta(cat_itemMeta);
-        return cat_item;
+        return lore;
     }
 
     public List<String> getCatorgies() {
