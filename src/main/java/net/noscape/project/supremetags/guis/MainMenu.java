@@ -80,34 +80,40 @@ public class MainMenu extends Menu {
     @Override
     public void setMenuItems() {
         final FileConfiguration config = SupremeTags.getInstance().getConfig();
+
         // loop through categories items.
-        for (String cats : getCatorgies()) {
-            if (cats == null) continue;
-            boolean canSee = config.getBoolean("categories." + cats + ".permission-see-category");
-            String permission = config.getString("categories." + cats + ".permission");
-            Material material; {
-                String materialName = config.getString("categories." + cats + ".material");
-                if (materialName == null) continue;
-                material = Material.valueOf(materialName);
-            }
-            int slot = config.getInt("categories." + cats + ".slot");
-            String displayname = config.getString("categories." + cats + ".id_display");
-
-            Player owner = menuUtil.getOwner();
-            if (owner.hasPermission(permission) == false && !canSee) continue;
-
-            setCatIcon(slot, cats, material, displayname);
-        }
+        for (String categories : getCatorgies())
+            setupMenuIcon(categories, config);
 
         if (config.getBoolean("categories-menu-fill-empty"))
             fillEmpty();
     }
-    public void setCatIcon(int invSlot, String category, Material material, String categoryDisplayName) {
+
+    private void setupMenuIcon(String category, FileConfiguration config) {
+        if (category == null) return;
+        boolean canSee = config.getBoolean("categories." + category + ".permission-see-category");
+        String permission = config.getString("categories." + category + ".permission");
+        Material material; {
+            String materialName = config.getString("categories." + category + ".material");
+            if (materialName == null) return;
+            material = Material.valueOf(materialName);
+        }
+        int slot = config.getInt("categories." + category + ".slot");
+        String displayname = config.getString("categories." + category + ".id_display");
+
+        Player owner = menuUtil.getOwner();
+        if (owner.hasPermission(permission) == false && !canSee) return;
+
+        setCatIcon(slot, category, material, displayname);
+    }
+
+    private void setCatIcon(int invSlot, String category, Material material, String categoryDisplayName) {
         ItemStack cat_item = new ItemStack(material, 1);
         cat_item.setItemMeta(createCatIconMeta(cat_item, category, categoryDisplayName));
         dataItem.put(invSlot, category);
         inventory.setItem(invSlot, cat_item);
     }
+    
     private ItemMeta createCatIconMeta(ItemStack icon, String category, String categoryDisplayName) {
         ItemMeta itemMeta = icon.getItemMeta();
         assert itemMeta != null;
@@ -119,6 +125,7 @@ public class MainMenu extends Menu {
         itemMeta.setLore(color(getCategoryLore(categoryDisplayName)));
         return itemMeta;
     }
+    
     private List<String> getCategoryLore(String category) {
         ArrayList<String> lore = (ArrayList<String>) SupremeTags.getInstance().getConfig().getStringList("categories." + category + ".lore");
         if (categoriesTags.get(category) != null)
